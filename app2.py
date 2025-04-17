@@ -12,15 +12,15 @@ st.set_page_config(page_title="Keyword Distributor", layout="wide")
 # Path for the logo image
 logo_path = os.path.join("utils", "logo.png")
 
-# Display logo beside the title
+# Display logo directly beside the title in a rectangular shape
 logo = Image.open(logo_path)
 col1, col2 = st.columns([1, 5])  # Adjusting column width to put logo beside the title
 
 with col1:
-    st.image(logo, width=80)  # Adjust size of logo
+    st.image(logo, width=120)  # Adjust size of logo (width set to 120px)
 
 with col2:
-    st.title("📦 Keyword Distributor")
+    st.title("Keyword Distributor")
 
 st.markdown("""
 Welcome to **Keyword Distributor**! 🚀
