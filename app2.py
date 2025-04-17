@@ -8,18 +8,19 @@ import matplotlib.pyplot as plt
 
 # Set up Streamlit app
 st.set_page_config(page_title="Keyword Distributor", layout="wide")
-st.title("📦 Keyword Distributor")
 
-# Path for images in the utils folder
+# Path for the logo image
 logo_path = os.path.join("utils", "logo.png")
-cover_photo_path = os.path.join("utils", "cover_photo.png")
 
-# Display logo and cover photo
+# Display logo beside the title
 logo = Image.open(logo_path)
-st.image(logo, width=200)
+col1, col2 = st.columns([1, 5])  # Adjusting column width to put logo beside the title
 
-cover_photo = Image.open(cover_photo_path)
-st.image(cover_photo, width=500)
+with col1:
+    st.image(logo, width=80)  # Adjust size of logo
+
+with col2:
+    st.title("📦 Keyword Distributor")
 
 st.markdown("""
 Welcome to **Keyword Distributor**! 🚀
