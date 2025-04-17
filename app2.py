@@ -1,22 +1,35 @@
 import streamlit as st
 from utils.merge import merge_amazon_files, merge_ebay_files
 from utils.distribute import distribute_keywords
-
+from PIL import Image
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# Set up Streamlit app
 st.set_page_config(page_title="Keyword Distributor", layout="wide")
 st.title("📦 Keyword Distributor")
+
+# Path for images in the utils folder
+logo_path = os.path.join("utils", "logo.png")
+cover_photo_path = os.path.join("utils", "cover_photo.png")
+
+# Display logo and cover photo
+logo = Image.open(logo_path)
+st.image(logo, width=200)
+
+cover_photo = Image.open(cover_photo_path)
+st.image(cover_photo, width=1200)
 
 st.markdown("""
 Welcome to **Keyword Distributor**! 🚀
 
-- Merge multiple Amazon & eBay keyword CSVs
-- Visualize merge counts
-- Distribute into 20‑account daily batches
-- Download a single monthly ZIP of all distributions
-- Download leftover keywords
+### What You Can Do:
+- 🔄 Merge multiple Amazon & eBay keyword CSVs
+- 📊 Visualize keyword counts & distributions
+- 🗂️ Distribute into 20‑account daily folders
+- 📦 Download as monthly ZIP
+- 💾 Download leftover (undistributed) keywords
 """)
 
 st.sidebar.title("Navigation")
@@ -28,7 +41,7 @@ for folder in ["uploads", "merged", "distributed", "leftover"]:
 
 if page == "Merge Files":
     st.header("🛠️ Merge Amazon & eBay Files")
-    st.write("Upload CSVs (columns: `Keyword`,`Link`).")
+    st.write("Upload CSVs with columns like: `Keyword`, `Link`.")
 
     amazon_files = st.file_uploader("Amazon CSVs", accept_multiple_files=True, key="amazon")
     ebay_files   = st.file_uploader("eBay CSVs", accept_multiple_files=True, key="ebay")
@@ -97,6 +110,26 @@ if page == "Distribute Keywords":
                 if result.get("ebay_download"):
                     with open(result["ebay_download"], "rb") as f:
                         st.download_button("📥 Download Undistributed eBay CSV", f, file_name="undistributed_ebay.csv", mime="text/csv")
+
+                # --- 📈 Interactive Dashboard ---
+                st.markdown("---")
+                st.subheader("📈 Distribution Dashboard")
+
+                pie_df = pd.DataFrame({
+                    "Platform": ["Amazon", "Amazon", "eBay", "eBay"],
+                    "Type": ["Distributed", "Undistributed", "Distributed", "Undistributed"],
+                    "Count": [
+                        result['amazon_distributed'],
+                        result['remaining_amazon'],
+                        result['ebay_distributed'],
+                        result['remaining_ebay']
+                    ]
+                })
+
+                pie_chart = px.sunburst(pie_df, path=['Platform', 'Type'], values='Count',
+                                        color='Platform', title="Keyword Distribution Overview")
+                st.plotly_chart(pie_chart, use_container_width=True)
+
             else:
                 st.warning("⚠️ Distribution failed.")
         else:
