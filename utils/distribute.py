@@ -12,21 +12,23 @@ def distribute_keywords(start_date):
     amazon_path = "merged/amazon_merged.csv"
     ebay_path   = "merged/ebay_merged.csv"
 
+    # Check if the merged files exist
     if not os.path.exists(amazon_path) or not os.path.exists(ebay_path):
         return False
 
+    # Read the merged files for the current session
     amazon_df = pd.read_csv(amazon_path)
     ebay_df   = pd.read_csv(ebay_path)
 
     amazon_total = len(amazon_df)
     ebay_total   = len(ebay_df)
 
-    # Full days possible by data
+    # Calculate how many full days of data we can distribute
     days_am = amazon_total // 1000
     days_eb = ebay_total   // 1000
     days_data = min(days_am, days_eb)
 
-    # Days left in month
+    # Days left in the current month
     tot_days = monthrange(start_date.year, start_date.month)[1]
     rem_days = tot_days - start_date.day + 1
 
@@ -34,6 +36,7 @@ def distribute_keywords(start_date):
 
     ptr_am = ptr_eb = 0
 
+    # Define the base folder for distribution
     base = Path("distributed") / f"{start_date.strftime('%Y-%m')}_distribution"
     base.mkdir(parents=True, exist_ok=True)
 
@@ -47,6 +50,7 @@ def distribute_keywords(start_date):
             acct_folder = day_folder / f"account_{acct}"
             acct_folder.mkdir(exist_ok=True, parents=True)
 
+            # Distribute the data in chunks (50 rows per account)
             am_chunk = amazon_df.iloc[ptr_am:ptr_am+50]
             eb_chunk = ebay_df.iloc[ptr_eb:ptr_eb+50]
             ptr_am += 50
@@ -55,7 +59,7 @@ def distribute_keywords(start_date):
             am_chunk.to_csv(acct_folder / f"amazon_us_{curr.strftime('%m-%d')}.csv", index=False)
             eb_chunk.to_csv(acct_folder / f"ebay_{curr.strftime('%m-%d')}.csv", index=False)
 
-    # Create one monthly ZIP
+    # Create one monthly ZIP file containing all the distributed files
     zip_path = f"distributed/{start_date.strftime('%Y-%m')}_distribution.zip"
     with zipfile.ZipFile(zip_path, 'w') as zf:
         for root, _, files in os.walk(base):
@@ -63,10 +67,10 @@ def distribute_keywords(start_date):
                 p = os.path.join(root, f)
                 zf.write(p, os.path.relpath(p, start=base.parent))
 
-    # Clean up unzipped folders
+    # Clean up the unzipped distribution folders
     shutil.rmtree(base)
 
-    # Leftovers
+    # Handle leftovers (undistributed rows)
     rem_am_df = amazon_df.iloc[ptr_am:]
     rem_eb_df = ebay_df.iloc[ptr_eb:]
     os.makedirs("leftover", exist_ok=True)
