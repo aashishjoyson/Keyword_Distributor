@@ -19,7 +19,7 @@ logo = Image.open(logo_path)
 st.image(logo, width=200)
 
 cover_photo = Image.open(cover_photo_path)
-st.image(cover_photo, width=1200)
+st.image(cover_photo, width=500)
 
 st.markdown("""
 Welcome to **Keyword Distributor**! 🚀
