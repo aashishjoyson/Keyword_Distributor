@@ -5,6 +5,7 @@ from PIL import Image
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import plotly.express as px
 
 # Set up Streamlit app
 st.set_page_config(page_title="Keyword Distributor", layout="wide")
