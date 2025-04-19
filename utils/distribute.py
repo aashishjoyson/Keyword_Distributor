@@ -64,8 +64,8 @@ def distribute_keywords(start_date):
     zip_path = f"distributed/{start_date.strftime('%Y-%m')}_distribution.zip"
     with zipfile.ZipFile(zip_path, 'w') as zf:
         for root, _, files in os.walk(base):
-            for f in files:
-                p = os.path.join(root, f)
+            for fname in files:
+                p = os.path.join(root, fname)
                 zf.write(p, os.path.relpath(p, start=base.parent))
 
     shutil.rmtree(base)
