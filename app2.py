@@ -70,7 +70,7 @@ if page == "Merge Files":
             )
             st.plotly_chart(fig_bar, use_container_width=True)
 
-            # Download buttons
+            # Download merged files
             with open("merged/amazon_merged.csv","rb") as f:
                 st.download_button("📥 Download Merged Amazon CSV", f, file_name="amazon_merged.csv")
             with open("merged/ebay_merged.csv","rb") as f:
@@ -93,6 +93,24 @@ if page == "Distribute Keywords":
                 colA.metric("Amazon Distributed", f"{result['amazon_distributed']}/{am_total}")
                 colB.metric("eBay Distributed",   f"{result['ebay_distributed']}/{eb_total}")
                 colC.metric("Days Distributed",    result['days_distributed'])
+
+                # Download monthly ZIP
+                if result.get('zip_path'):
+                    with open(result['zip_path'], 'rb') as f:
+                        st.download_button(
+                            "📥 Download Monthly Distribution ZIP",
+                            f,
+                            file_name=os.path.basename(result['zip_path']),
+                            mime="application/zip"
+                        )
+
+                # Download leftover keywords
+                if result.get('amazon_download'):
+                    with open(result['amazon_download'], 'rb') as f:
+                        st.download_button("📥 Download Undistributed Amazon CSV", f, file_name="undistributed_amazon.csv", mime="text/csv")
+                if result.get('ebay_download'):
+                    with open(result['ebay_download'], 'rb') as f:
+                        st.download_button("📥 Download Undistributed eBay CSV", f, file_name="undistributed_ebay.csv", mime="text/csv")
 
                 # Interactive pie charts
                 st.subheader("Distribution vs Leftover")
@@ -133,10 +151,11 @@ if page == "Distribute Keywords":
                 sunb.update_traces(textinfo='label+percent entry')
                 st.plotly_chart(sunb, use_container_width=True)
 
-                # Daily trend line chart
+                # Detailed daily distribution and trend
                 if 'daily_distribution' in result:
                     st.subheader("Daily Distribution Trend")
                     df_daily = pd.DataFrame(result['daily_distribution'])
+                    df_daily['date'] = df_daily['date'].astype(str)
                     line = px.line(
                         df_daily,
                         x='date',
@@ -146,12 +165,10 @@ if page == "Distribute Keywords":
                     )
                     st.plotly_chart(line, use_container_width=True)
 
-                # Detailed table
-                if 'daily_distribution' in result:
+                    # Detailed table
                     st.subheader("Detailed Daily Distribution")
-                    st.dataframe(
-                        df_daily.assign(date=df_daily['date'].dt.strftime('%Y-%m-%d'))
-                    )
+                    st.dataframe(df_daily)
+
             else:
                 st.warning("Distribution failed. Please merge files first.")
         else:
