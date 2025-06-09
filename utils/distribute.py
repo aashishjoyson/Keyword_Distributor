@@ -20,9 +20,9 @@ def distribute_keywords(start_date):
     amazon_total = len(amazon_df)
     ebay_total   = len(ebay_df)
 
-    # Calculate full days possible
-    days_am = amazon_total // 1000
-    days_eb = ebay_total   // 1000
+    # Updated daily rows per platform: 24 accounts * 50 rows = 1200 rows
+    days_am = amazon_total // 1200
+    days_eb = ebay_total   // 1200
     days_data = min(days_am, days_eb)
 
     # Days left in month
@@ -41,14 +41,14 @@ def distribute_keywords(start_date):
         # Track daily distribution
         daily_distribution.append({
             'date': curr,
-            'amazon': min(1000, amazon_total - ptr_am),
-            'ebay':   min(1000, ebay_total   - ptr_eb)
+            'amazon': min(1200, amazon_total - ptr_am),
+            'ebay':   min(1200, ebay_total   - ptr_eb)
         })
 
         day_folder = base / curr.strftime('%Y-%m-%d')
         day_folder.mkdir(exist_ok=True, parents=True)
 
-        for acct in range(1, 21):
+        for acct in range(1, 25):  # Changed from 21 to 25 for 24 accounts
             acct_folder = day_folder / f"account_{acct}"
             acct_folder.mkdir(exist_ok=True, parents=True)
 
