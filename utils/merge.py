@@ -1,34 +1,33 @@
 import pandas as pd
 import os
 
-def merge_amazon_files(uploaded_files):
-    all_dfs = []
+PLATFORM_KEYS = ["amazon_us", "ebay", "amazon_de", "amazon_uk", "amazon_ca", "amazon_au"]
+
+def process_uploaded_files(uploaded_files):
+    os.makedirs("merged", exist_ok=True)
+    row_counts = {}
+    saved_paths = {}
+    total_files = 0
+
     for file in uploaded_files:
-        df = pd.read_csv(file)
-        all_dfs.append(df)
+        filename = file.name.lower().replace(".csv", "").strip()
+        matched_platform = next((key for key in PLATFORM_KEYS if key in filename), None)
 
-    # Clear any pre-existing merged files to avoid issues from previous sessions
-    merged_path = os.path.join("merged", "amazon_merged.csv")
-    if os.path.exists(merged_path):
-        os.remove(merged_path)
+        if matched_platform:
+            df = pd.read_csv(file)
+            total_files += 1
 
-    # Merge the uploaded Amazon files
-    merged_df = pd.concat(all_dfs, ignore_index=True)
-    merged_df.to_csv(merged_path, index=False)
-    return len(merged_df)
+            merged_path = os.path.join("merged", f"{matched_platform}.csv")
+            if os.path.exists(merged_path):
+                existing_df = pd.read_csv(merged_path)
+                df = pd.concat([existing_df, df], ignore_index=True)
 
-def merge_ebay_files(uploaded_files):
-    all_dfs = []
-    for file in uploaded_files:
-        df = pd.read_csv(file)
-        all_dfs.append(df)
+            df.to_csv(merged_path, index=False)
+            row_counts[matched_platform] = len(df)
+            saved_paths[matched_platform] = merged_path
 
-    # Clear any pre-existing merged files to avoid issues from previous sessions
-    merged_path = os.path.join("merged", "ebay_merged.csv")
-    if os.path.exists(merged_path):
-        os.remove(merged_path)
-
-    # Merge the uploaded eBay files
-    merged_df = pd.concat(all_dfs, ignore_index=True)
-    merged_df.to_csv(merged_path, index=False)
-    return len(merged_df)
+    return {
+        "total_files": total_files,
+        "row_counts": row_counts,
+        "saved_paths": saved_paths
+    }
