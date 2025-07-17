@@ -3,31 +3,33 @@ import os
 
 PLATFORM_KEYS = ["amazon_us", "ebay", "amazon_de", "amazon_uk", "amazon_ca", "amazon_au"]
 
-def process_uploaded_files(uploaded_files):
+def save_uploaded_file(uploaded_file, save_dir="merged"):
+    os.makedirs(save_dir, exist_ok=True)
+    # Normalize file name (handles cases like "Amazon_US.csv" or "amazon_us.csv")
+    filename = uploaded_file.name.split(".")[0].strip().lower().replace(" ", "_").replace("-", "_") + ".csv"
+    file_path = os.path.join(save_dir, filename)
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.read())
+    return file_path
+
+def merge_uploaded_files(uploaded_files):
+    all_dfs = {platform: [] for platform in PLATFORM_KEYS}
+
+    for uploaded_file in uploaded_files:
+        normalized_name = uploaded_file.name.split(".")[0].strip().lower().replace(" ", "_").replace("-", "_")
+        if normalized_name not in PLATFORM_KEYS:
+            continue
+        df = pd.read_csv(uploaded_file)
+        all_dfs[normalized_name].append(df)
+
     os.makedirs("merged", exist_ok=True)
-    row_counts = {}
-    saved_paths = {}
-    total_files = 0
+    for platform, dfs in all_dfs.items():
+        merged_path = os.path.join("merged", f"{platform}.csv")
+        if dfs:
+            merged_df = pd.concat(dfs, ignore_index=True)
+            merged_df.to_csv(merged_path, index=False)
 
-    for file in uploaded_files:
-        filename = file.name.lower().replace(".csv", "").strip()
-        matched_platform = next((key for key in PLATFORM_KEYS if key in filename), None)
+    merged_counts = {platform: len(pd.read_csv(os.path.join("merged", f"{platform}.csv"))) 
+                     for platform in PLATFORM_KEYS if os.path.exists(os.path.join("merged", f"{platform}.csv")))}
 
-        if matched_platform:
-            df = pd.read_csv(file)
-            total_files += 1
-
-            merged_path = os.path.join("merged", f"{matched_platform}.csv")
-            if os.path.exists(merged_path):
-                existing_df = pd.read_csv(merged_path)
-                df = pd.concat([existing_df, df], ignore_index=True)
-
-            df.to_csv(merged_path, index=False)
-            row_counts[matched_platform] = len(df)
-            saved_paths[matched_platform] = merged_path
-
-    return {
-        "total_files": total_files,
-        "row_counts": row_counts,
-        "saved_paths": saved_paths
-    }
+    return merged_counts
