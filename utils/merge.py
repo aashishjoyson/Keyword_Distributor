@@ -1,39 +1,50 @@
 import pandas as pd
 import os
+from pathlib import Path
 
-def save_uploaded_file(uploaded_file, save_path):
-    with open(save_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+# Recognized platforms (lowercase substrings to match in filenames)
+PLATFORM_KEYS = ["amazon_us", "amazon_uk", "amazon_de", "amazon_ca", "amazon_au", "ebay"]
+
+def normalize_name(name: str) -> str:
+    base = Path(name).stem.lower().strip().replace(" ", "_").replace("-", "_")
+    return base
+
+def match_platform(filename_stem: str) -> str | None:
+    for key in PLATFORM_KEYS:
+        if key in filename_stem:
+            return key
+    return None
 
 def merge_uploaded_files(uploaded_files):
     """
-    Processes and merges uploaded files by platform based on their names.
-    Returns a dictionary with row counts per platform.
+    Accepts multiple uploaded CSV files (any subset of supported platforms).
+    - Detects platform from filename (case-insensitive).
+    - Merges multiple files per platform.
+    - Writes merged CSVs to merged/{platform}.csv
+    Returns dict: {platform: row_count} for platforms that were merged.
     """
-    merged_counts = {}
     os.makedirs("merged", exist_ok=True)
 
-    platforms = {
-        "amazon_us": [],
-        "ebay": [],
-        "amazon_de": [],
-        "amazon_uk": [],
-        "amazon_ca": [],
-        "amazon_au": []
-    }
+    bucket = {k: [] for k in PLATFORM_KEYS}
 
-    for file in uploaded_files:
-        file_name = file.name.lower().replace(".csv", "")
-        for platform in platforms.keys():
-            if platform in file_name:
-                df = pd.read_csv(file)
-                platforms[platform].append(df)
-                break
+    for up in uploaded_files:
+        stem = normalize_name(up.name)
+        platform = match_platform(stem)
+        if not platform:
+            # skip unknown
+            continue
+        df = pd.read_csv(up)
+        bucket[platform].append(df)
 
-    for platform, dfs in platforms.items():
+    merged_counts = {}
+    for platform, dfs in bucket.items():
+        out_path = Path("merged") / f"{platform}.csv"
         if dfs:
             merged_df = pd.concat(dfs, ignore_index=True)
-            merged_df.to_csv(f"merged/{platform}.csv", index=False)
+            merged_df.to_csv(out_path, index=False)
             merged_counts[platform] = len(merged_df)
+        else:
+            # If no upload for this platform in this run, do not touch existing files.
+            pass
 
     return merged_counts
