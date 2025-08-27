@@ -2,108 +2,212 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-from utils.merge import save_uploaded_file, merge_uploaded_files
+from utils.merge import merge_uploaded_files
 from utils.distribute import distribute_keywords
 from PIL import Image
+from pathlib import Path
 
 st.set_page_config(page_title="Keyword Distributor", layout="wide")
 
 # --- Header ---
-logo = Image.open(os.path.join("utils", "logo.png"))
+logo_path = os.path.join("utils", "logo.png")
+if os.path.exists(logo_path):
+    logo = Image.open(logo_path)
+else:
+    logo = None
+
 col1, col2 = st.columns([1, 5])
 with col1:
-    st.image(logo, width=120)
+    if logo:
+        st.image(logo, width=120)
 with col2:
-    st.markdown("# 📦 Keyword Distributor", unsafe_allow_html=True)
+    st.markdown("# 📦 Keyword Distributor")
 
-st.markdown(
-    """
-    Welcome to **Keyword Distributor**! 🚀
+st.caption("Upload marketplace keyword CSVs, merge by platform, and distribute across N accounts with 100 rows per account.")
 
-    **Features:**
-    - 🔄 Upload multiple keyword CSV files (Amazon & eBay - US, DE, UK, CA, AU)
-    - 📊 Visualize keyword counts
-    - 🗂️ Distribute into 23 accounts daily folders
-    - 📦 Download monthly ZIP
-    - 💾 Download leftover keywords
-    """
-)
-
+# Sidebar nav
 st.sidebar.title("Navigation")
 page = st.sidebar.selectbox("Go to", ["Merge Files", "Distribute Keywords"])
 
+# Ensure folders
 for folder in ["uploads", "merged", "distributed", "leftover"]:
     os.makedirs(folder, exist_ok=True)
 
+# Utility: discover merged platforms dynamically
+def get_available_platforms():
+    merged_dir = Path("merged")
+    if not merged_dir.exists():
+        return []
+    platforms = []
+    for p in merged_dir.glob("*.csv"):
+        platforms.append(p.stem)  # filename without extension
+    return sorted(platforms)
+
+# --- Merge Files Page ---
 if page == "Merge Files":
-    st.header("🛠️ Merge Multiple Platform Files")
-    st.write("Upload CSVs named as `amazon_us`, `ebay`, `amazon_de`, `amazon_uk`, `amazon_ca`, `amazon_au`.")
+    st.header("🛠️ Merge Files")
+    st.write("Upload any subset of these (case-insensitive in filename): `amazon_us`, `amazon_uk`, `amazon_de`, `amazon_ca`, `amazon_au`, `ebay`.")
+    st.write("You can upload multiple files per platform — we’ll merge them together.")
 
-    uploaded_files = st.file_uploader("Upload Multiple Files", accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload CSV files", accept_multiple_files=True, type=["csv"])
 
-    if st.button("Merge Files"):
+    if st.button("Merge Files", type="primary"):
         if not uploaded_files:
-            st.warning("Please upload at least one file.")
+            st.warning("Please upload at least one CSV.")
         else:
             merged_counts = merge_uploaded_files(uploaded_files)
-            st.success("✅ Files merged successfully!")
-            for platform, count in merged_counts.items():
-                st.write(f"{platform}: {count} rows")
+            if not merged_counts:
+                st.error("No recognizable platform files found. Please check filenames.")
+            else:
+                st.success("✅ Merged successfully!")
 
-            # Visualization
-            platforms = list(merged_counts.keys())
-            counts = [merged_counts[platform] for platform in platforms]
-            fig = px.bar(x=platforms, y=counts, labels={'x': 'Platform', 'y': 'Row Count'}, title="Merged Keyword Counts")
-            st.plotly_chart(fig, use_container_width=True)
+                # Minimal stats
+                platforms = list(merged_counts.keys())
+                counts = [merged_counts[p] for p in platforms]
 
-            # Download buttons
-            for platform in platforms:
-                merged_path = f"merged/{platform}.csv"
-                with open(merged_path, "rb") as f:
-                    st.download_button(f"📥 Download {platform} CSV", f, file_name=f"{platform}.csv")
+                # Dashboard (2 cards): table + pie
+                c1, c2 = st.columns(2)
 
+                with c1:
+                    st.subheader("Merged Counts")
+                    df_counts = pd.DataFrame({"platform": platforms, "rows": counts})
+                    st.dataframe(df_counts, use_container_width=True, hide_index=True)
+
+                with c2:
+                    st.subheader("Share of Merged Rows")
+                    pie = px.pie(df_counts, names="platform", values="rows", hole=0.35, title=None)
+                    st.plotly_chart(pie, use_container_width=True)
+
+                # Downloads for each merged file
+                st.subheader("Downloads")
+                for platform in platforms:
+                    merged_path = f"merged/{platform}.csv"
+                    if os.path.exists(merged_path):
+                        with open(merged_path, "rb") as f:
+                            st.download_button(f"📥 Download {platform}.csv", f, file_name=f"{platform}.csv")
+
+# --- Distribute Page ---
 if page == "Distribute Keywords":
     st.header("📦 Distribute Keywords")
-    st.write("Select a start date to generate your distribution.")
-    start_date = st.date_input("Start Date")
 
-    if st.button("Distribute"):
-        result = distribute_keywords(start_date)
-        if result:
-            st.success(f"✅ Distributed for {result['days_distributed']} days.")
+    available_platforms = get_available_platforms()
+    if not available_platforms:
+        st.info("No merged files detected. Please go to **Merge Files** first.")
+    else:
+        st.write(f"Detected platforms: `{', '.join(available_platforms)}`")
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("### Distribution Counts")
-                for key in result.keys():
-                    if key.endswith("_distributed"):
-                        st.write(f"{key.replace('_distributed','').upper()}: {result[key]} rows distributed")
-            with col2:
-                st.write("### Leftovers")
-                for key in result.keys():
-                    if key.startswith("remaining_"):
-                        st.write(f"{key.replace('remaining_','').upper()}: {result[key]} rows remaining")
+    # Inputs
+    st.write("Select a start date and how many accounts to distribute into.")
+    colA, colB = st.columns(2)
+    with colA:
+        start_date = st.date_input("Start Date")
+    with colB:
+        # Dual control: slider + number input
+        slider_val = st.slider("Accounts (slider)", min_value=1, max_value=50, value=23)
+        number_val = st.number_input("Accounts (type exact)", min_value=1, max_value=50, value=slider_val, step=1)
+        accounts = int(number_val)  # use typed value as the source of truth
 
-            # Daily Distribution Trend
-            df_daily = pd.DataFrame(result['daily_distribution'])
-            st.subheader("📈 Daily Distribution Trend")
-            st.dataframe(df_daily)
-
-            # Line Chart
-            line = px.line(df_daily, x='date', y=[col for col in df_daily.columns if col != 'date'],
-                           title="Daily Distribution Per Platform")
-            st.plotly_chart(line, use_container_width=True)
-
-            # Download ZIP
-            with open(result['zip_path'], "rb") as f:
-                st.download_button("📥 Download Distribution ZIP", f, file_name=os.path.basename(result['zip_path']))
-
-            # Download leftover files
-            st.subheader("💾 Leftover Files")
-            for platform in ["amazon_us", "ebay", "amazon_de", "amazon_uk", "amazon_ca", "amazon_au"]:
-                leftover_path = result.get(f"{platform}_download")
-                if leftover_path:
-                    with open(leftover_path, "rb") as f:
-                        st.download_button(f"Download leftover {platform}.csv", f, file_name=os.path.basename(leftover_path))
+    if st.button("Distribute", type="primary"):
+        result = distribute_keywords(start_date, accounts=accounts, rows_per_account=100)
+        if not result:
+            st.warning("Distribution failed — ensure at least one merged CSV exists in the `merged/` folder.")
         else:
-            st.warning("❌ Distribution failed. Please ensure merged files exist.")
+            st.success(f"✅ Distributed for **{result['days_distributed']}** day(s) across **{accounts}** account(s).")
+
+            # Stats row (metrics)
+            st.markdown("### Key Stats")
+            metrics_cols = st.columns(4)
+            total_platforms = len(result["platforms"])
+            total_distributed = sum(result.get(f"{p}_distributed", 0) for p in result["platforms"])
+            total_leftover = sum(result.get(f"remaining_{p}", 0) for p in result["platforms"])
+            metrics_cols[0].metric("Platforms", total_platforms)
+            metrics_cols[1].metric("Days", result["days_distributed"])
+            metrics_cols[2].metric("Total Distributed", total_distributed)
+            metrics_cols[3].metric("Total Leftover", total_leftover)
+
+            # Prepare data for charts
+            platforms = result["platforms"]
+            dist_counts = [result.get(f"{p}_distributed", 0) for p in platforms]
+            rem_counts = [result.get(f"remaining_{p}", 0) for p in platforms]
+
+            df_summary = pd.DataFrame({
+                "platform": platforms,
+                "distributed": dist_counts,
+                "leftover": rem_counts
+            })
+            df_long = df_summary.melt(id_vars="platform", value_vars=["distributed", "leftover"], var_name="type", value_name="rows")
+
+            # Daily distribution (per platform)
+            df_daily = pd.DataFrame(result["daily_distribution"])  # columns: date, platform columns with daily counts
+            # Ensure date is string for chart x-axis
+            if "date" in df_daily.columns:
+                df_daily["date"] = df_daily["date"].astype(str)
+
+            # Sunburst data: build (Date -> Platform -> Account) hierarchy using daily per-platform counts
+            # We simulate per-account rows from the day counts, splitting evenly (last account may be partial).
+            sun_rows = []
+            rows_per_account = result["rows_per_account"]
+            acc_n = result["accounts"]
+            for _, row in df_daily.iterrows():
+                date_str = row["date"]
+                for p in platforms:
+                    day_count = int(row.get(p, 0))
+                    if day_count <= 0:
+                        continue
+                    full_accounts = day_count // rows_per_account
+                    remainder = day_count % rows_per_account
+                    # Add full accounts
+                    for a in range(1, min(acc_n, full_accounts) + 1):
+                        sun_rows.append({"Date": date_str, "Platform": p, "Account": f"Account_{a:02d}", "Rows": rows_per_account})
+                    # Add remainder (if any) to next account
+                    next_acc = full_accounts + 1
+                    if remainder > 0 and next_acc <= acc_n:
+                        sun_rows.append({"Date": date_str, "Platform": p, "Account": f"Account_{next_acc:02d}", "Rows": remainder})
+
+            df_sun = pd.DataFrame(sun_rows) if sun_rows else pd.DataFrame(columns=["Date", "Platform", "Account", "Rows"])
+
+            # 2x2 dashboard
+            t1, t2 = st.columns(2)
+            with t1:
+                st.subheader("Distribution vs Leftover (Pie)")
+                pie2 = px.pie(df_long, names="platform", values="rows", color="type", hole=0.35)
+                st.plotly_chart(pie2, use_container_width=True)
+
+            with t2:
+                st.subheader("Sunburst: Date → Platform → Account")
+                if not df_sun.empty:
+                    sunb = px.sunburst(df_sun, path=["Date", "Platform", "Account"], values="Rows")
+                    st.plotly_chart(sunb, use_container_width=True)
+                else:
+                    st.info("No sunburst data to show (no distributed rows).")
+
+            b1, b2 = st.columns(2)
+            with b1:
+                st.subheader("Daily Trend by Platform")
+                if not df_daily.empty:
+                    # Line chart: one series per platform
+                    y_cols = [c for c in df_daily.columns if c != "date"]
+                    if y_cols:
+                        line = px.line(df_daily, x="date", y=y_cols, labels={"value": "Rows", "variable": "Platform"})
+                        st.plotly_chart(line, use_container_width=True)
+                    else:
+                        st.info("No platform columns found in daily distribution.")
+                else:
+                    st.info("No daily distribution data.")
+
+            with b2:
+                st.subheader("Platform Summary")
+                st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+            # ZIP download
+            if result.get("zip_path") and os.path.exists(result["zip_path"]):
+                with open(result["zip_path"], "rb") as f:
+                    st.download_button("📦 Download Distribution ZIP", f, file_name=os.path.basename(result["zip_path"]))
+
+            # Leftover downloads (only those that exist)
+            st.subheader("💾 Leftover Files")
+            for p in platforms:
+                leftover_path = result.get(f"{p}_download")
+                if leftover_path and os.path.exists(leftover_path):
+                    with open(leftover_path, "rb") as f:
+                        st.download_button(f"Download leftover {p}.csv", f, file_name=os.path.basename(leftover_path))
