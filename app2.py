@@ -8,6 +8,7 @@ from utils.generator import detect_columns, generate_keywords_for_df, DOMAIN_OPT
 from PIL import Image
 from pathlib import Path
 from io import BytesIO
+import time 
 
 
 st.set_page_config(page_title="KEY GEN AI", layout="wide")
@@ -229,8 +230,17 @@ if page == "Keyword Generator":
         key="kg_upload"
     )
 
+    # If a new file is uploaded, clear previous generation results
+    if uploaded_file is not None:
+        if st.session_state.get("kg_uploaded_name") != uploaded_file.name:
+            st.session_state["kg_uploaded_name"] = uploaded_file.name
+            for k in ("kg_final_df", "kg_stats", "kg_time_taken", "kg_perf"):
+                if k in st.session_state:
+                    del st.session_state[k]
+
+    # Read file if uploaded
+    df = None
     if uploaded_file:
-        # Read file
         name = uploaded_file.name.lower()
         try:
             if name.endswith(".csv"):
@@ -241,62 +251,133 @@ if page == "Keyword Generator":
             st.error(f"Failed to read file: {e}")
             df = None
 
-        if df is not None:
-            st.subheader("Preview")
-            st.dataframe(df.head())
+    # Show file info + preview
+    if df is not None:
+        st.subheader("📊 File Information")
+        col1, col2, col3 = st.columns([1, 1, 3])
+        col1.metric("Rows", len(df))
+        col2.metric("Columns", len(df.columns))
+        col3.markdown("**Columns:** " + ", ".join([f"`{c}`" for c in df.columns]))
 
-            # Detect columns
-            cols = list(df.columns)
-            title_col, link_col, keywords_col = detect_columns(cols)
+        st.subheader("🔍 Preview (first 5 rows)")
+        st.dataframe(df.head(), use_container_width=True)
 
-            if not title_col:
-                st.error("Could not find a Product Title/Product Titles column (case-insensitive). Please include one.")
-            else:
-                api_key = st.secrets.get("GROQ_API_KEY")
+        # Detect columns
+        cols = list(df.columns)
+        title_col, link_col, keywords_col = detect_columns(cols)
+
+        if not title_col:
+            st.error("❌ Could not find a Product Title/Product Titles column (case-insensitive). Please include one.")
+        else:
+            api_key = st.secrets.get("GROQ_API_KEY")
+            if not api_key:
+                st.warning("⚠️ GROQ_API_KEY is missing. Add it in Streamlit Secrets to enable generation.")
+
+            # Trigger generation
+            if st.button("🚀 Generate Keywords", key="kg_generate"):
                 if not api_key:
-                    st.warning("GROQ_API_KEY is missing. Add it in Streamlit Secrets to enable generation.")
+                    st.stop()
 
-                if st.button("Generate Keywords", key="kg_generate"):
-                    if not api_key:
-                        st.stop()
+                start_time = time.time()
+                progress = st.progress(0, text="Generating keywords...")
 
-                    # Progress bar
-                    progress = st.progress(0, text="Generating keywords...")
+                def _cb(done, total):
+                    # progress expects fraction in [0,1]
+                    try:
+                        progress.progress(min(max(done / total, 0.0), 1.0))
+                    except Exception:
+                        # fallback in case total==0
+                        progress.progress(1.0)
 
-                    def _cb(done, total):
-                        # done/total in [0,1]
-                        progress.progress(min(max(done/total, 0.0), 1.0))
+                final_df, stats = generate_keywords_for_df(
+                    df=df.copy(),
+                    api_key=api_key,
+                    title_col=title_col,
+                    link_col=link_col,
+                    keywords_col=keywords_col,
+                    progress_cb=_cb,
+                    delay_seconds=1.5,
+                    retries=3
+                )
 
-                    final_df, stats = generate_keywords_for_df(
-                        df=df.copy(),
-                        api_key=api_key,
-                        title_col=title_col,
-                        link_col=link_col,
-                        keywords_col=keywords_col,
-                        progress_cb=_cb,
-                        delay_seconds=1.5,
-                        retries=3
-                    )
+                time_taken = time.time() - start_time
+                api_calls = stats.get("generated", 0) + stats.get("failed", 0)
+                rows_total = len(df)
+                rows_per_sec_total = rows_total / time_taken if time_taken > 0 else 0.0
+                api_rows_per_sec = api_calls / time_taken if time_taken > 0 else 0.0
+                avg_ms_per_api_call = (time_taken / api_calls * 1000.0) if api_calls > 0 else None
+                success_rate = (stats.get("generated", 0) / api_calls * 100.0) if api_calls > 0 else 0.0
 
-                    st.success(f"✅ Completed! Generated: {stats['generated']} • Failed: {stats['failed']} • Skipped: {stats['skipped']}")
+                # Persist results in session_state so dropdowns / reruns won't clear them
+                st.session_state["kg_final_df"] = final_df
+                st.session_state["kg_stats"] = stats
+                st.session_state["kg_time_taken"] = time_taken
+                st.session_state["kg_perf"] = {
+                    "rows_total": rows_total,
+                    "api_calls": api_calls,
+                    "rows_per_sec_total": rows_per_sec_total,
+                    "api_rows_per_sec": api_rows_per_sec,
+                    "avg_ms_per_api_call": avg_ms_per_api_call,
+                    "success_rate": success_rate
+                }
 
-                    # Domain/marketplace selection for filename
-                    domain_label = st.selectbox("🌍 Save file for marketplace:", list(DOMAIN_OPTIONS.keys()))
-                    filename = DOMAIN_OPTIONS[domain_label]
+    # If we have generated results (persisted), render the performance dashboard + preview + download
+    if "kg_final_df" in st.session_state:
+        final_df = st.session_state["kg_final_df"]
+        stats = st.session_state["kg_stats"]
+        time_taken = st.session_state["kg_time_taken"]
+        perf = st.session_state["kg_perf"]
 
-                    # Show the final frame that will be downloaded
-                    st.subheader("Final Output (Distributor-ready)")
-                    st.dataframe(final_df.head(20))
+        st.success(f"✅ Keywords ready — generated {stats['generated']} items (failed: {stats['failed']}, skipped: {stats['skipped']}).")
 
-                    # Download button
-                    csv_buf = BytesIO()
-                    final_df.to_csv(csv_buf, index=False)
-                    csv_buf.seek(0)
-                    st.download_button(
-                        label=f"📥 Download for {domain_label}",
-                        data=csv_buf,
-                        file_name=filename,
-                        mime="text/csv"
-                    )
+        # Performance metrics (clean, dashboard-like)
+        st.subheader("📈 Performance Summary")
+        a1, a2, a3, a4 = st.columns(4)
+        a1.metric("Total rows", perf["rows_total"])
+        a2.metric("API calls (gen+fail)", perf["api_calls"])
+        a3.metric("Total time (s)", f"{perf['rows_per_sec_total'] and time_taken:.2f}" if time_taken else f"{time_taken:.2f}")
+        a4.metric("Rows/sec (total)", f"{perf['rows_per_sec_total']:.2f}")
+
+        b1, b2 = st.columns(2)
+        b1.metric("Rows/sec (API)", f"{perf['api_rows_per_sec']:.2f}")
+        b2.metric("Avg ms / API call", f"{perf['avg_ms_per_api_call']:.0f} ms" if perf["avg_ms_per_api_call"] else "N/A")
+
+        c1, c2 = st.columns([2, 3])
+        with c1:
+            st.metric("Success rate (API)", f"{perf['success_rate']:.1f}%")
+            st.metric("Generated", stats["generated"])
+            st.metric("Failed", stats["failed"])
+            st.metric("Skipped", stats["skipped"])
+        with c2:
+            # Pie chart: Generated / Failed / Skipped
+            pie_df = pd.DataFrame({
+                "status": ["Generated", "Failed", "Skipped"],
+                "count": [stats["generated"], stats["failed"], stats["skipped"]]
+            })
+            pie = px.pie(pie_df, names="status", values="count", hole=0.4, title="Generation outcomes")
+            st.plotly_chart(pie, use_container_width=True)
+
+        # Output preview + domain selection + download
+        st.subheader("📄 Final Output (Distributor-ready)")
+        st.dataframe(final_df.head(20), use_container_width=True)
+
+        domain_label = st.selectbox("🌍 Save file for marketplace:", list(DOMAIN_OPTIONS.keys()), key="kg_domain")
+        filename = DOMAIN_OPTIONS[domain_label]
+
+        csv_bytes = final_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label=f"📥 Download for {domain_label}",
+            data=csv_bytes,
+            file_name=filename,
+            mime="text/csv",
+            key="kg_download"
+        )
+
+        # Allow clearing results
+        if st.button("🧹 Clear generated results", key="kg_clear"):
+            for k in ("kg_final_df", "kg_stats", "kg_time_taken", "kg_perf", "kg_uploaded_name"):
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.experimental_rerun()
 
     st.info("Tip: If your input includes a Links column, the output will be **Keywords | Links**. If not, the output will be **Keywords** only. The **Product Title** column is always dropped in the final file.")
