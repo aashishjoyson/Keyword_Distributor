@@ -4,6 +4,7 @@ import plotly.express as px
 import os
 from utils.merge import merge_uploaded_files
 from utils.distribute import distribute_keywords
+from utils.generator import detect_columns, generate_keywords_for_df, DOMAIN_OPTIONS
 from PIL import Image
 from pathlib import Path
 
