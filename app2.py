@@ -7,7 +7,7 @@ from utils.distribute import distribute_keywords
 from PIL import Image
 from pathlib import Path
 
-st.set_page_config(page_title="Keyword Distributor", layout="wide")
+st.set_page_config(page_title="KEY GEN AI", layout="wide")
 
 # --- Header ---
 logo_path = os.path.join("utils", "logo.png")
@@ -27,8 +27,7 @@ st.caption("Upload marketplace keyword CSVs, merge by platform, and distribute a
 
 # Sidebar nav
 st.sidebar.title("Navigation")
-page = st.sidebar.selectbox("Go to", ["Merge Files", "Distribute Keywords"])
-
+page = st.sidebar.selectbox("Go to", ["Merge Files", "Distribute Keywords", "Keyword Generator"])
 # Ensure folders
 for folder in ["uploads", "merged", "distributed", "leftover"]:
     os.makedirs(folder, exist_ok=True)
@@ -211,3 +210,90 @@ if page == "Distribute Keywords":
                 if leftover_path and os.path.exists(leftover_path):
                     with open(leftover_path, "rb") as f:
                         st.download_button(f"Download leftover {p}.csv", f, file_name=os.path.basename(leftover_path))
+        
+
+
+# =========================
+# Keyword Generator Page
+# =========================
+if page == "Keyword Generator":
+    st.header("🤖 Keyword Generator (Groq Llama 4 Maverick)")
+    st.write("Upload a CSV/XLSX that contains **Product Title(s)** and optionally **Link(s)**. The app will generate keywords, drop the product title column, and let you download a Distributor-ready file.")
+
+    uploaded_file = st.file_uploader(
+        "Upload Excel (.xlsx) or CSV (.csv)",
+        type=["xlsx", "csv"],
+        key="kg_upload"
+    )
+
+    if uploaded_file:
+        # Read file
+        name = uploaded_file.name.lower()
+        try:
+            if name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+        except Exception as e:
+            st.error(f"Failed to read file: {e}")
+            df = None
+
+        if df is not None:
+            st.subheader("Preview")
+            st.dataframe(df.head())
+
+            # Detect columns
+            cols = list(df.columns)
+            title_col, link_col, keywords_col = detect_columns(cols)
+
+            if not title_col:
+                st.error("Could not find a Product Title/Product Titles column (case-insensitive). Please include one.")
+            else:
+                api_key = st.secrets.get("GROQ_API_KEY")
+                if not api_key:
+                    st.warning("GROQ_API_KEY is missing. Add it in Streamlit Secrets to enable generation.")
+
+                if st.button("Generate Keywords", key="kg_generate"):
+                    if not api_key:
+                        st.stop()
+
+                    # Progress bar
+                    progress = st.progress(0, text="Generating keywords...")
+
+                    def _cb(done, total):
+                        # done/total in [0,1]
+                        progress.progress(min(max(done/total, 0.0), 1.0))
+
+                    final_df, stats = generate_keywords_for_df(
+                        df=df.copy(),
+                        api_key=api_key,
+                        title_col=title_col,
+                        link_col=link_col,
+                        keywords_col=keywords_col,
+                        progress_cb=_cb,
+                        delay_seconds=1.5,
+                        retries=3
+                    )
+
+                    st.success(f"✅ Completed! Generated: {stats['generated']} • Failed: {stats['failed']} • Skipped: {stats['skipped']}")
+
+                    # Domain/marketplace selection for filename
+                    domain_label = st.selectbox("🌍 Save file for marketplace:", list(DOMAIN_OPTIONS.keys()))
+                    filename = DOMAIN_OPTIONS[domain_label]
+
+                    # Show the final frame that will be downloaded
+                    st.subheader("Final Output (Distributor-ready)")
+                    st.dataframe(final_df.head(20))
+
+                    # Download button
+                    csv_buf = BytesIO()
+                    final_df.to_csv(csv_buf, index=False)
+                    csv_buf.seek(0)
+                    st.download_button(
+                        label=f"📥 Download for {domain_label}",
+                        data=csv_buf,
+                        file_name=filename,
+                        mime="text/csv"
+                    )
+
+    st.info("Tip: If your input includes a Links column, the output will be **Keywords | Links**. If not, the output will be **Keywords** only. The **Product Title** column is always dropped in the final file.")
