@@ -7,6 +7,8 @@ from utils.distribute import distribute_keywords
 from utils.generator import detect_columns, generate_keywords_for_df, DOMAIN_OPTIONS
 from PIL import Image
 from pathlib import Path
+from io import BytesIO
+
 
 st.set_page_config(page_title="KEY GEN AI", layout="wide")
 
